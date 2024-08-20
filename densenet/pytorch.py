@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 
+
 class Transition(nn.Module):
     def __init__(self, in_planes, out_planes):
         super(Transition, self).__init__()
@@ -109,4 +110,3 @@ class DenseNet(nn.Module):
         out = out.view(out.size(0), -1)
         out = self.linear(out)
         return out
-

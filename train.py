@@ -26,6 +26,7 @@ print(f"Model has {len(layers)} layers")
 train_set = datasets.load_cifar100(train=True)
 test_set = datasets.load_cifar100(train=False)
 
+
 def get_streamed_data(data, batch_size=0, shuffled=True):
     mean = np.array([0.485, 0.456, 0.406]).reshape((1, 1, 3))
     std = np.array([0.229, 0.224, 0.225]).reshape((1, 1, 3))
