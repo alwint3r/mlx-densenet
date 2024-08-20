@@ -7,13 +7,20 @@ import numpy as np
 import trainer
 import time
 from sklearn.metrics import f1_score, precision_score, recall_score
+import tensorboard as tb
+import datetime
+
+growth_rate = 6
+model_nblocks = [6, 12, 24, 16]
+reduction_rate = 0.5
+num_classes = 100
 
 model = DenseNet(
     BasicBlock,
-    nblocks=[6, 12, 24, 16],
-    growth_rate=6,
-    num_classes=100,
-    reduction=0.5,
+    nblocks=model_nblocks,
+    growth_rate=growth_rate,
+    num_classes=num_classes,
+    reduction=reduction_rate,
 )
 mx.eval(model)
 
@@ -37,6 +44,8 @@ def get_streamed_data(data, batch_size=0, shuffled=True):
 
     buffer = data.shuffle() if shuffled else data
     stream = buffer.to_stream()
+    stream = stream.image_random_area_crop("image", (0.08, 1.0), (0.75, 1.333))
+    stream = stream.image_resize("image", 32, 32)
     stream = stream.image_random_h_flip("image", prob=0.5)
     stream = stream.pad("image", 0, 4, 4, 0.0)
     stream = stream.pad("image", 1, 4, 4, 0.0)
@@ -46,7 +55,7 @@ def get_streamed_data(data, batch_size=0, shuffled=True):
     return stream.prefetch(8, 8)
 
 
-epochs = 300
+epochs = 120
 optimizer = optim.SGD(
     learning_rate=0.1,
     weight_decay=1e-4,
@@ -54,16 +63,24 @@ optimizer = optim.SGD(
     dampening=False,
 )
 
-batch_size = 64
+batch_size = 256
 train_data = get_streamed_data(batch_size=batch_size, data=train_set, shuffled=True)
 test_data = get_streamed_data(batch_size=batch_size, data=test_set, shuffled=False)
 
-train_accuracies = []
-train_losses = []
 test_accuracies = []
 
+train_output_dir = (
+    f"logs/densenet_cifar100/{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}/train"
+)
+train_writer = tb.summary.Writer(train_output_dir)
+test_output_dir = (
+    f"logs/densenet_cifar100/{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}/test"
+)
+test_writer = tb.summary.Writer(test_output_dir)
+
 for epoch in range(epochs):
-    if epoch % 50 == 0 and epoch != 0:
+    #    if epoch % 50 == 0 and epoch != 0:
+    if epoch in [30, 60, 90]:
         print(f"Decaying learning rate by 10x at epoch {epoch}")
         optimizer.learning_rate /= 10
         print(f"New learning rate: {optimizer.learning_rate}")
@@ -93,9 +110,10 @@ for epoch in range(epochs):
     toc = time.perf_counter()
     print(f"Epoch: {epoch+1} | Test acc {test_acc.item():.3f}, Time: {toc-tic:.2f} sec")
 
-    train_accuracies.append(train_acc)
-    train_losses.append(train_loss)
-    test_accuracies.append(test_acc)
+    train_writer.add_scalar("loss", train_loss.item(), step=epoch)
+    train_writer.add_scalar("accuracy", train_acc.item(), step=epoch)
+    train_writer.add_scalar("learning_rate", optimizer.learning_rate, step=epoch)
+    test_writer.add_scalar("accuracy", test_acc.item(), step=epoch)
 
     train_data.reset()
     test_data.reset()
