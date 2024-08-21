@@ -10,7 +10,7 @@ from sklearn.metrics import f1_score, precision_score, recall_score
 import tensorboard as tb
 import datetime
 
-growth_rate = 6
+growth_rate = 12
 model_nblocks = [6, 12, 24, 16]
 reduction_rate = 0.5
 num_classes = 100
@@ -34,7 +34,7 @@ train_set = datasets.load_cifar100(train=True)
 test_set = datasets.load_cifar100(train=False)
 
 
-def get_streamed_data(data, batch_size=0, shuffled=True):
+def get_streamed_data(data, batch_size=0, train=True):
     mean = np.array([0.485, 0.456, 0.406]).reshape((1, 1, 3))
     std = np.array([0.229, 0.224, 0.225]).reshape((1, 1, 3))
 
@@ -42,8 +42,11 @@ def get_streamed_data(data, batch_size=0, shuffled=True):
         x = x.astype("float32") / 255.0
         return (x - mean) / std
 
-    buffer = data.shuffle() if shuffled else data
-    stream = buffer.to_stream()
+    if not train:
+        stream = data.to_stream()
+        return stream.key_transform("image", normalize).batch(batch_size).prefetch(8, 8)
+
+    stream = data.shuffle().to_stream()
     stream = stream.image_random_area_crop("image", (0.08, 1.0), (0.75, 1.333))
     stream = stream.image_resize("image", 32, 32)
     stream = stream.image_random_h_flip("image", prob=0.5)
@@ -63,23 +66,19 @@ optimizer = optim.SGD(
     dampening=False,
 )
 
-batch_size = 256
-train_data = get_streamed_data(batch_size=batch_size, data=train_set, shuffled=True)
-test_data = get_streamed_data(batch_size=batch_size, data=test_set, shuffled=False)
+batch_size = 128
+train_data = get_streamed_data(batch_size=batch_size, data=train_set, train=True)
+test_data = get_streamed_data(batch_size=batch_size, data=test_set, train=False)
 
 test_accuracies = []
 
-train_output_dir = (
-    f"logs/densenet_cifar100/{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}/train"
-)
+now_formatted = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+train_output_dir = f"logs/densenet_cifar100/{now_formatted}/train"
 train_writer = tb.summary.Writer(train_output_dir)
-test_output_dir = (
-    f"logs/densenet_cifar100/{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}/test"
-)
+test_output_dir = f"logs/densenet_cifar100/{now_formatted}/test"
 test_writer = tb.summary.Writer(test_output_dir)
 
 for epoch in range(epochs):
-    #    if epoch % 50 == 0 and epoch != 0:
     if epoch in [30, 60, 90]:
         print(f"Decaying learning rate by 10x at epoch {epoch}")
         optimizer.learning_rate /= 10
